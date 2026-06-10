@@ -239,6 +239,16 @@ class PostgresStore(Store):
         # transaction/statement pooler (e.g. PgBouncer / Supabase pooler).
         self._conn.prepare_threshold = None
 
+        # Map Python lists <-> pgvector's vector type. Optional (cloud extra):
+        # store works without it for everything except embedding writes/reads.
+        self._vector_ready = False
+        try:
+            from pgvector.psycopg import register_vector
+            register_vector(self._conn)
+            self._vector_ready = True
+        except ImportError:
+            pass
+
     def close(self) -> None:
         self._conn.close()
 
@@ -317,6 +327,35 @@ class PostgresStore(Store):
             (uuid.UUID(owner_id),),
         ).fetchall()
         return [self._build(r) for r in rows]
+
+    def iter_unembedded(self, owner_id: str) -> list[Conversation]:
+        """Conversations for ``owner_id`` whose embedding is still NULL."""
+        from psycopg.rows import dict_row
+
+        cur = self._conn.cursor(row_factory=dict_row)
+        rows = cur.execute(
+            "SELECT id, owner_id, source, external_id, title, model, project, "
+            "created_at, updated_at FROM conversations "
+            "WHERE owner_id = %s AND embedding IS NULL "
+            "ORDER BY updated_at DESC NULLS LAST, id",
+            (uuid.UUID(owner_id),),
+        ).fetchall()
+        return [self._build(r) for r in rows]
+
+    def set_embedding(self, owner_id: str, conversation_id: str,
+                      vector: list[float]) -> None:
+        """Write a 1024-dim embedding for one owner-scoped conversation."""
+        if not self._vector_ready:
+            raise RuntimeError(
+                "pgvector not available — install the cloud extra "
+                "(pip install -e \".[cloud]\") to write embeddings."
+            )
+        with self._conn.transaction():
+            self._conn.execute(
+                "UPDATE conversations SET embedding = %s "
+                "WHERE id = %s AND owner_id = %s",
+                (vector, uuid.UUID(conversation_id), uuid.UUID(owner_id)),
+            )
 
     def list_conversations(self, owner_id: str = "local") -> list[ConversationSummary]:
         from psycopg.rows import dict_row

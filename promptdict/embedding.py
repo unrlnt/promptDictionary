@@ -1,0 +1,40 @@
+"""Embed conversations through the gateway.
+
+Builds one representative text per conversation, gets a vector via the egress
+gateway (which sanitizes first — never the provider directly), and stores it on
+``conversations.embedding``. This is the only place embeddings are written.
+
+Owner-scoped and idempotent: it only touches conversations belonging to
+``owner_id`` and skips any that already have an embedding.
+"""
+from __future__ import annotations
+
+from .cloud import SanitizingGateway
+from .models import Conversation
+from .store import PostgresStore
+
+# Cap the representative text so a long conversation can't blow up token cost.
+DEFAULT_CHAR_LIMIT = 8000
+
+
+def representative_text(conversation: Conversation, char_limit: int = DEFAULT_CHAR_LIMIT) -> str:
+    """The text we embed for a conversation: its user turns concatenated (the user's
+    own phrasing is what defines the task), capped at ``char_limit`` characters."""
+    user_turns = [m.text for m in conversation.messages if m.role == "user" and m.text]
+    return "\n\n".join(user_turns).strip()[:char_limit]
+
+
+def embed_conversations(store: PostgresStore, gateway: SanitizingGateway,
+                        owner_id: str, char_limit: int = DEFAULT_CHAR_LIMIT) -> int:
+    """Embed every not-yet-embedded conversation for ``owner_id``. Returns the count
+    embedded. Sanitization happens inside ``gateway.embed`` — no provider is called
+    directly here."""
+    embedded = 0
+    for conv in store.iter_unembedded(owner_id):
+        text = representative_text(conv, char_limit)
+        if not text:
+            continue  # nothing user-authored to embed; leave it for now
+        vector = gateway.embed([text])[0]
+        store.set_embedding(owner_id, conv.conversation_id, vector)
+        embedded += 1
+    return embedded
