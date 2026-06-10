@@ -65,7 +65,7 @@ create table public.conversations (
     updated_at   timestamptz,
     content_hash text not null,                          -- skip re-analysis when unchanged
     cluster_id   uuid,                                   -- set by step 2 (FK added below)
-    embedding    vector(1536),                           -- set dimension to match your provider
+    embedding    vector(1024),                           -- set dimension to match your provider
     unique (owner_id, source, external_id)
 );
 
@@ -89,7 +89,7 @@ create table public.clusters (
     id         uuid primary key default gen_random_uuid(),
     owner_id   uuid not null references auth.users (id) on delete cascade,
     label      text,                                     -- e.g. "prepare a presentation"
-    centroid   vector(1536),
+    centroid   vector(1024),
     created_at timestamptz not null default now()
 );
 alter table public.conversations

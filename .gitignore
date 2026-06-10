@@ -1,0 +1,31 @@
+# Secrets / local config — never commit
+.env
+.env.*
+!.env.example
+
+# Local databases (SQLiteStore dev data)
+*.db
+*.sqlite
+*.sqlite3
+
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Packaging / build artifacts
+*.egg-info/
+build/
+dist/
+
+# Downloaded spaCy NER model directories (installed via `spacy download`)
+en_core_web_lg/
+nl_core_news_lg/
+xx_ent_wiki_sm/
+
+# OS cruft
+.DS_Store

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "promptdict"
+version = "0.1.0"
+description = "Learn prompting patterns from your own AI chat history, privately."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+# Core is stdlib-only by design. Anything that touches the cloud or does NER
+# lives in the optional `cloud` extra so the core stays dependency-free.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest"]
+cloud = ["presidio-analyzer", "phonenumbers", "mistralai"]
+
+[project.scripts]
+promptdict = "promptdict.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["promptdict*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
