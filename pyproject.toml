@@ -14,8 +14,8 @@ license = { text = "Proprietary" }
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest"]
-cloud = ["presidio-analyzer", "phonenumbers", "mistralai"]
+dev = ["pytest", "phonenumbers"]
+cloud = ["presidio-analyzer", "phonenumbers", "mistralai", "psycopg[binary]", "python-dotenv"]
 
 [project.scripts]
 promptdict = "promptdict.cli:main"

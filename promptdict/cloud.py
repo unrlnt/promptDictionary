@@ -5,12 +5,11 @@ LLM for refinement extraction) goes through SanitizingGateway. There is no metho
 on the gateway that sends un-sanitized text, so sanitization cannot be forgotten
 or bypassed.
 
-Provider choice is open: the LLM extraction can run on Claude (e.g. Haiku, cheap),
-embeddings on a provider like Voyage or OpenAI (Anthropic has no first-party
-embeddings endpoint). Both sit behind these interfaces, so swapping providers is
-a one-line change. For sensitive data, configure the provider for zero data
-retention / no training — sanitization lowers risk but the provider agreement is
-what makes egress defensible.
+Providers are EU-native Mistral for everything: extraction runs on Mistral Small
+and embeddings on Mistral Embed (`mistral-embed`, vector(1024)), both on the EU
+endpoint with zero data retention enabled. Both sit behind these interfaces, so
+swapping providers stays a one-line change. Sanitization lowers risk, but the
+ZDR / no-training provider agreement is what makes egress defensible.
 """
 from __future__ import annotations
 

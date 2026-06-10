@@ -45,11 +45,14 @@ def _text_from_content(content: object) -> str:
         if isinstance(parts, list):
             return "\n".join(str(p) for p in parts if isinstance(p, (str, int, float)))
     if isinstance(content, list):
+        # Claude content blocks: keep ONLY text blocks. Ignore tool_use,
+        # tool_result, thinking, and any other non-text block type.
         out = []
         for part in content:
             if isinstance(part, str):
                 out.append(part)
-            elif isinstance(part, dict) and isinstance(part.get("text"), str):
+            elif (isinstance(part, dict) and part.get("type") == "text"
+                  and isinstance(part.get("text"), str)):
                 out.append(part["text"])
         return "\n".join(out)
     return ""

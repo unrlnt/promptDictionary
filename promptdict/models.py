@@ -12,6 +12,7 @@ support is additive, not a migration.
 from __future__ import annotations
 
 import hashlib
+import uuid
 from dataclasses import dataclass, field
 
 
@@ -38,6 +39,14 @@ class Conversation:
     created_at: str | None = None
     updated_at: str | None = None
     owner_id: str = "local"              # auth user id in prod; 'local' for dev
+
+    @property
+    def conversation_id(self) -> str:
+        """Stable, deterministic id derived from (owner_id, source, external_id).
+        Survives re-imports (unlike the DB-generated uuid), so derived rows can
+        reference a conversation consistently across ingests."""
+        key = f"{self.owner_id}\x1f{self.source}\x1f{self.external_id}"
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, key))
 
     @property
     def content_hash(self) -> str:

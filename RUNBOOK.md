@@ -7,21 +7,21 @@ up here.
 
 ## 1. Supabase project
 1. Create a Supabase project in an **EU region** (data residency for GDPR).
-2. SQL editor → run `supabase/0001_init.sql`. This creates the schema, enables
+2. Apply the migration in `supabase/migrations/`. This creates the schema, enables
    `pgvector`, and turns on row-level security with the owner-only / team-shared
-   policies.
-3. Set the `vector(1536)` dimension in the migration to match your embedding
-   provider before running it (e.g. OpenAI `text-embedding-3-small` = 1536,
-   Voyage `voyage-3` = 1024).
+   policies. Apply it either by pasting the file into the SQL editor or by running
+   `supabase db push`.
+3. The migration ships at `vector(1024)` to match Mistral Embed (`mistral-embed`).
+   Only change the dimension if you swap embedding providers.
 4. Auth → enable email and/or OAuth sign-in.
 
 ## 2. Keys (server-side only — never ship the service role key to the browser)
 - `SUPABASE_URL`, `SUPABASE_ANON_KEY` — used by the app/client.
 - `SUPABASE_SERVICE_ROLE_KEY` — used ONLY by the background worker. It bypasses
   RLS, which is why writes to `team_checklist_items` are worker-only.
-- `ANTHROPIC_API_KEY` — LLM extraction (e.g. Claude Haiku).
-- Embedding provider key (Voyage / OpenAI).
-- Configure providers for **zero data retention / no training**. Sanitization
+- `MISTRAL_API_KEY` — covers both extraction (Mistral Small) and embeddings
+  (Mistral Embed). Use the **EU endpoint**.
+- Configure the provider for **zero data retention / no training**. Sanitization
   lowers risk; the provider agreement is what makes egress defensible.
 
 ## 3. The worker (NER models)
