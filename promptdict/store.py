@@ -357,6 +357,51 @@ class PostgresStore(Store):
                 (vector, uuid.UUID(conversation_id), uuid.UUID(owner_id)),
             )
 
+    def iter_embedded(self, owner_id: str) -> list[tuple[str, object]]:
+        """Return ``(conversation_id, embedding)`` for the owner's embedded
+        conversations. The embedding comes back as a pgvector-mapped array."""
+        if not self._vector_ready:
+            raise RuntimeError(
+                "pgvector not available — install the cloud extra "
+                "(pip install -e \".[cloud]\") to read embeddings."
+            )
+        cur = self._conn.cursor()
+        rows = cur.execute(
+            "SELECT id, embedding FROM conversations "
+            "WHERE owner_id = %s AND embedding IS NOT NULL ORDER BY id",
+            (uuid.UUID(owner_id),),
+        ).fetchall()
+        return [(str(r[0]), r[1]) for r in rows]
+
+    def replace_clusters(self, owner_id: str,
+                         clusters: list[tuple[object, list[str]]]) -> None:
+        """Idempotently rewrite this owner's clusters. ``clusters`` is a list of
+        ``(centroid_vector, [member_conversation_id, ...])``. Clears the owner's
+        existing clusters/assignments first, then writes the new ones. Other
+        owners' rows are never touched."""
+        with self._conn.transaction():
+            # Detach this owner's conversations, then drop their old clusters.
+            self._conn.execute(
+                "UPDATE conversations SET cluster_id = NULL WHERE owner_id = %s",
+                (uuid.UUID(owner_id),),
+            )
+            self._conn.execute(
+                "DELETE FROM clusters WHERE owner_id = %s", (uuid.UUID(owner_id),)
+            )
+            for centroid, member_ids in clusters:
+                row = self._conn.execute(
+                    "INSERT INTO clusters (owner_id, centroid) VALUES (%s, %s) "
+                    "RETURNING id",
+                    (uuid.UUID(owner_id), centroid),
+                ).fetchone()
+                cluster_id = row[0]
+                self._conn.execute(
+                    "UPDATE conversations SET cluster_id = %s "
+                    "WHERE owner_id = %s AND id = ANY(%s)",
+                    (cluster_id, uuid.UUID(owner_id),
+                     [uuid.UUID(m) for m in member_ids]),
+                )
+
     def list_conversations(self, owner_id: str = "local") -> list[ConversationSummary]:
         from psycopg.rows import dict_row
 

@@ -28,7 +28,15 @@ class IngestResult:
     new_or_changed: int
 
 
-def ingest(path: str, store: Store) -> IngestResult:
+def ingest(path: str, store: Store, owner_id: str | None = None) -> IngestResult:
+    """Load an export and upsert it into ``store``. When ``owner_id`` is given
+    (e.g. ingesting into Postgres for a specific auth user), it is set on every
+    Conversation before upsert; otherwise the model's default owner is kept."""
     source, conversations = load_conversations(path)
-    changed = sum(1 for conv in conversations if store.upsert(conv))
+    changed = 0
+    for conv in conversations:
+        if owner_id is not None:
+            conv.owner_id = owner_id
+        if store.upsert(conv):
+            changed += 1
     return IngestResult(source=source, total=len(conversations), new_or_changed=changed)
