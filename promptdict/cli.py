@@ -6,6 +6,8 @@
     python -m promptdict.cli list                                 # SQLite
     python -m promptdict.cli embed   --owner-id <uuid>            # embed via the gateway
     python -m promptdict.cli cluster --owner-id <uuid>            # cluster task types
+    python -m promptdict.cli extract --owner-id <uuid>            # mine refinements (gateway)
+    python -m promptdict.cli label   --owner-id <uuid>            # label clusters (gateway)
 
 Ingest stores RAW conversations privately; sanitization happens only at cloud
 egress (`embed`), never here. The SQLite path needs no cloud deps; `embed` and
@@ -110,6 +112,34 @@ def _cmd_cluster(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_extract(args: argparse.Namespace) -> int:
+    from .extraction import extract_refinements
+    from .store import PostgresStore
+
+    store = PostgresStore()
+    try:
+        gateway = _production_gateway()
+        n = extract_refinements(store, gateway, args.owner_id)
+    finally:
+        store.close()
+    print(f"Extracted refinements for {n} conversation(s) for owner {args.owner_id}.")
+    return 0
+
+
+def _cmd_label(args: argparse.Namespace) -> int:
+    from .extraction import label_clusters
+    from .store import PostgresStore
+
+    store = PostgresStore()
+    try:
+        gateway = _production_gateway()
+        n = label_clusters(store, gateway, args.owner_id)
+    finally:
+        store.close()
+    print(f"Labelled {n} cluster(s) for owner {args.owner_id}.")
+    return 0
+
+
 def _fail(message: str) -> int:
     print(f"error: {message}", file=sys.stderr)
     return 2
@@ -137,6 +167,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_cluster = sub.add_parser("cluster", help="Cluster an owner's embedded conversations.")
     p_cluster.add_argument("--owner-id", required=True, help="Auth-user UUID.")
     p_cluster.set_defaults(func=_cmd_cluster)
+
+    p_extract = sub.add_parser("extract", help="Extract refinements via the gateway.")
+    p_extract.add_argument("--owner-id", required=True, help="Auth-user UUID.")
+    p_extract.set_defaults(func=_cmd_extract)
+
+    p_label = sub.add_parser("label", help="Label an owner's clusters via the gateway.")
+    p_label.add_argument("--owner-id", required=True, help="Auth-user UUID.")
+    p_label.set_defaults(func=_cmd_label)
 
     return parser
 

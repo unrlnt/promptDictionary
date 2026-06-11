@@ -402,6 +402,90 @@ class PostgresStore(Store):
                      [uuid.UUID(m) for m in member_ids]),
                 )
 
+    def iter_unextracted(self, owner_id: str) -> list[tuple[Conversation, str | None]]:
+        """Return ``(conversation, cluster_id)`` for the owner's conversations that
+        have not had refinements extracted yet."""
+        from psycopg.rows import dict_row
+
+        cur = self._conn.cursor(row_factory=dict_row)
+        rows = cur.execute(
+            "SELECT id, owner_id, source, external_id, title, model, project, "
+            "created_at, updated_at, cluster_id FROM conversations "
+            "WHERE owner_id = %s AND refinements_extracted_at IS NULL ORDER BY id",
+            (uuid.UUID(owner_id),),
+        ).fetchall()
+        out: list[tuple[Conversation, str | None]] = []
+        for r in rows:
+            cluster_id = None if r["cluster_id"] is None else str(r["cluster_id"])
+            out.append((self._build(r), cluster_id))
+        return out
+
+    def replace_refinements(self, owner_id: str, conversation_id: str,
+                            rows: list[tuple]) -> None:
+        """Idempotently rewrite one conversation's refinements and stamp it as
+        extracted. ``rows`` are ``(kind, turn_index, in_first_prompt, note,
+        cluster_id)``. Owner-scoped; other owners untouched."""
+        conv_uuid = uuid.UUID(conversation_id)
+        owner_uuid = uuid.UUID(owner_id)
+        with self._conn.transaction():
+            self._conn.execute(
+                "DELETE FROM refinements WHERE conversation_id = %s AND owner_id = %s",
+                (conv_uuid, owner_uuid),
+            )
+            for kind, turn_index, in_first_prompt, note, cluster_id in rows:
+                self._conn.execute(
+                    "INSERT INTO refinements (owner_id, conversation_id, cluster_id, "
+                    "kind, turn_index, in_first_prompt, note) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    (owner_uuid, conv_uuid,
+                     uuid.UUID(cluster_id) if cluster_id else None,
+                     kind, turn_index, in_first_prompt, note),
+                )
+            self._conn.execute(
+                "UPDATE conversations SET refinements_extracted_at = now() "
+                "WHERE id = %s AND owner_id = %s",
+                (conv_uuid, owner_uuid),
+            )
+
+    def iter_clusters_unlabelled(self, owner_id: str,
+                                 sample_size: int = 5) -> list[tuple[str, list[str]]]:
+        """Return ``(cluster_id, [first_user_message, ...])`` for this owner's
+        clusters that have no label yet — up to ``sample_size`` samples each."""
+        from psycopg.rows import dict_row
+
+        cur = self._conn.cursor(row_factory=dict_row)
+        clusters = cur.execute(
+            "SELECT id FROM clusters WHERE owner_id = %s AND label IS NULL ORDER BY id",
+            (uuid.UUID(owner_id),),
+        ).fetchall()
+        out: list[tuple[str, list[str]]] = []
+        for c in clusters:
+            members = self._conn.cursor(row_factory=dict_row).execute(
+                "SELECT id FROM conversations "
+                "WHERE owner_id = %s AND cluster_id = %s ORDER BY id LIMIT %s",
+                (uuid.UUID(owner_id), c["id"], sample_size),
+            ).fetchall()
+            samples: list[str] = []
+            for m in members:
+                first = self._conn.cursor(row_factory=dict_row).execute(
+                    "SELECT text FROM messages "
+                    "WHERE conversation_id = %s AND owner_id = %s AND role = 'user' "
+                    "ORDER BY idx LIMIT 1",
+                    (m["id"], uuid.UUID(owner_id)),
+                ).fetchone()
+                if first and first["text"]:
+                    samples.append(first["text"])
+            out.append((str(c["id"]), samples))
+        return out
+
+    def set_cluster_label(self, owner_id: str, cluster_id: str, label: str) -> None:
+        """Set a cluster's human-readable label, owner-scoped."""
+        with self._conn.transaction():
+            self._conn.execute(
+                "UPDATE clusters SET label = %s WHERE id = %s AND owner_id = %s",
+                (label, uuid.UUID(cluster_id), uuid.UUID(owner_id)),
+            )
+
     def list_conversations(self, owner_id: str = "local") -> list[ConversationSummary]:
         from psycopg.rows import dict_row
 
