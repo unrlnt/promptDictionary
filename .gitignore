@@ -27,5 +27,11 @@ en_core_web_lg/
 nl_core_news_lg/
 xx_ent_wiki_sm/
 
+# Next.js web app (web/) build artifacts and local env
+web/node_modules/
+web/.next/
+web/out/
+web/.env.local
+
 # OS cruft
 .DS_Store
