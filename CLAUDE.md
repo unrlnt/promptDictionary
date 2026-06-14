@@ -49,7 +49,16 @@ import (raw, private)  ->  Store (Postgres + pgvector, RLS)
 
 ## Stack
 Python 3.11+ (stdlib-only core; cloud deps optional). Supabase (Postgres + pgvector
-+ auth + RLS), EU region. Cloud egress is **Mistral for everything, EU-native**:
++ auth + RLS), EU region.
+
+**Supabase keys:** the project uses the **new publishable/secret API keys**. Server/
+worker code uses the **secret key** (`SUPABASE_SECRET_KEY`, `sb_secret_…`, browser-
+blocked); the legacy `SUPABASE_SERVICE_ROLE_KEY` is kept only as a transition
+fallback. Resolve via `config.Settings.supabase_secret` (prefers the new key, falls
+back to legacy) — call sites never read the env vars directly. JWT verification has
+been migrated to **asymmetric signing keys** (standby key in place, not yet rotated).
+
+Cloud egress is **Mistral for everything, EU-native**:
 - Embeddings: **Mistral Embed** (`mistral-embed`), `vector(1024)`, EU endpoint + ZDR on.
 - Extraction LLM: **Mistral Small**, EU endpoint + ZDR on.
 Both sit behind the provider interfaces in `cloud.py`. User BYOK (paste own API key)

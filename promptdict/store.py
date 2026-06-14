@@ -486,6 +486,83 @@ class PostgresStore(Store):
                 (label, uuid.UUID(cluster_id), uuid.UUID(owner_id)),
             )
 
+    def iter_refinements(self, owner_id: str) -> list[dict]:
+        """All of the owner's refinement rows (both forgotten and upfront — the
+        graduation trend needs the upfront ones), each joined to its conversation's
+        created_at. Owner-scoped on both tables."""
+        from psycopg.rows import dict_row
+
+        cur = self._conn.cursor(row_factory=dict_row)
+        rows = cur.execute(
+            "SELECT r.kind, r.in_first_prompt, r.cluster_id, r.conversation_id, "
+            "       r.note, c.created_at "
+            "FROM refinements r "
+            "JOIN conversations c "
+            "  ON c.id = r.conversation_id AND c.owner_id = r.owner_id "
+            "WHERE r.owner_id = %s "
+            "ORDER BY c.created_at NULLS LAST, r.id",
+            (uuid.UUID(owner_id),),
+        ).fetchall()
+        return [
+            {"kind": r["kind"], "in_first_prompt": r["in_first_prompt"],
+             "cluster_id": None if r["cluster_id"] is None else str(r["cluster_id"]),
+             "conversation_id": str(r["conversation_id"]),
+             "note": r["note"], "created_at": _iso(r["created_at"])}
+            for r in rows
+        ]
+
+    def iter_clusters(self, owner_id: str) -> list[tuple[str, str | None]]:
+        """``(cluster_id, label)`` for the owner's clusters."""
+        from psycopg.rows import dict_row
+
+        cur = self._conn.cursor(row_factory=dict_row)
+        rows = cur.execute(
+            "SELECT id, label FROM clusters WHERE owner_id = %s ORDER BY id",
+            (uuid.UUID(owner_id),),
+        ).fetchall()
+        return [(str(r["id"]), r["label"]) for r in rows]
+
+    def replace_checklists(self, owner_id: str, rows: list[tuple]) -> None:
+        """Idempotently rewrite the owner's checklists. ``rows`` are
+        ``(scope, cluster_id, kind, conversation_count, total_count, rank,
+        sample_notes, graduation)``. Owner-scoped; other owners untouched."""
+        owner = uuid.UUID(owner_id)
+        with self._conn.transaction():
+            self._conn.execute(
+                "DELETE FROM checklists WHERE owner_id = %s", (owner,)
+            )
+            for (scope, cluster_id, kind, conv_count, total, rank,
+                 sample_notes, graduation) in rows:
+                self._conn.execute(
+                    "INSERT INTO checklists (owner_id, scope, cluster_id, kind, "
+                    "conversation_count, total_count, rank, sample_notes, graduation) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    (owner, scope,
+                     uuid.UUID(cluster_id) if cluster_id else None,
+                     kind, conv_count, total, rank, list(sample_notes), graduation),
+                )
+
+    def iter_checklists(self, owner_id: str) -> list[dict]:
+        """Read the owner's checklist rows for display."""
+        from psycopg.rows import dict_row
+
+        cur = self._conn.cursor(row_factory=dict_row)
+        rows = cur.execute(
+            "SELECT scope, cluster_id, kind, conversation_count, total_count, rank, "
+            "       sample_notes, graduation FROM checklists "
+            "WHERE owner_id = %s ORDER BY scope, cluster_id NULLS FIRST, rank",
+            (uuid.UUID(owner_id),),
+        ).fetchall()
+        return [
+            {"scope": r["scope"],
+             "cluster_id": None if r["cluster_id"] is None else str(r["cluster_id"]),
+             "kind": r["kind"], "conversation_count": r["conversation_count"],
+             "total_count": r["total_count"], "rank": r["rank"],
+             "sample_notes": list(r["sample_notes"] or []),
+             "graduation": r["graduation"]}
+            for r in rows
+        ]
+
     def list_conversations(self, owner_id: str = "local") -> list[ConversationSummary]:
         from psycopg.rows import dict_row
 

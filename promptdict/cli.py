@@ -8,6 +8,8 @@
     python -m promptdict.cli cluster --owner-id <uuid>            # cluster task types
     python -m promptdict.cli extract --owner-id <uuid>            # mine refinements (gateway)
     python -m promptdict.cli label   --owner-id <uuid>            # label clusters (gateway)
+    python -m promptdict.cli checklist build --owner-id <uuid>    # aggregate (no egress)
+    python -m promptdict.cli checklist show  --owner-id <uuid>    # print checklists
 
 Ingest stores RAW conversations privately; sanitization happens only at cloud
 egress (`embed`), never here. The SQLite path needs no cloud deps; `embed` and
@@ -140,6 +142,65 @@ def _cmd_label(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_checklist_build(args: argparse.Namespace) -> int:
+    from .checklists import build_checklists
+    from .store import PostgresStore
+
+    store = PostgresStore()
+    try:
+        result = build_checklists(store, args.owner_id)
+    finally:
+        store.close()
+    print(
+        f"Built checklists for owner {args.owner_id}: {result.global_kinds} global "
+        f"kind(s), {result.cluster_rows} per-cluster row(s) across "
+        f"{result.clusters} cluster(s)."
+    )
+    return 0
+
+
+def _checklist_line(r: dict) -> str:
+    tag = f"  [{r['graduation']}]" if r.get("graduation") else ""
+    note = r["sample_notes"][0] if r["sample_notes"] else ""
+    eg = f'  e.g. "{note}"' if note else ""
+    return (f"  {r['rank']}. {r['kind']:<12} conv={r['conversation_count']} "
+            f"total={r['total_count']}{tag}{eg}")
+
+
+def _cmd_checklist_show(args: argparse.Namespace) -> int:
+    from .store import PostgresStore
+
+    store = PostgresStore()
+    try:
+        rows = store.iter_checklists(args.owner_id)
+        labels = dict(store.iter_clusters(args.owner_id))
+    finally:
+        store.close()
+
+    if not rows:
+        print("No checklists yet. Run `checklist build --owner-id <uuid>` first.")
+        return 0
+
+    if not args.cluster:
+        print("Global checklist — most-forgotten requirements:")
+        for r in sorted((x for x in rows if x["scope"] == "global"),
+                        key=lambda x: x["rank"]):
+            print(_checklist_line(r))
+
+    by_cluster: dict[str, list[dict]] = {}
+    for r in (x for x in rows if x["scope"] == "cluster"):
+        by_cluster.setdefault(r["cluster_id"], []).append(r)
+
+    for cid, items in by_cluster.items():
+        if args.cluster and cid != args.cluster:
+            continue
+        label = labels.get(cid) or "(unlabelled)"
+        print(f'\nCluster: {label}  [{cid}]')
+        for r in sorted(items, key=lambda x: x["rank"]):
+            print(_checklist_line(r))
+    return 0
+
+
 def _fail(message: str) -> int:
     print(f"error: {message}", file=sys.stderr)
     return 2
@@ -175,6 +236,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_label = sub.add_parser("label", help="Label an owner's clusters via the gateway.")
     p_label.add_argument("--owner-id", required=True, help="Auth-user UUID.")
     p_label.set_defaults(func=_cmd_label)
+
+    p_checklist = sub.add_parser("checklist", help="Build or show aggregated checklists.")
+    csub = p_checklist.add_subparsers(dest="checklist_cmd", required=True)
+    p_cb = csub.add_parser("build", help="Aggregate refinements into checklists.")
+    p_cb.add_argument("--owner-id", required=True, help="Auth-user UUID.")
+    p_cb.set_defaults(func=_cmd_checklist_build)
+    p_cs = csub.add_parser("show", help="Print an owner's checklists (read-only).")
+    p_cs.add_argument("--owner-id", required=True, help="Auth-user UUID.")
+    p_cs.add_argument("--cluster", help="Show only this cluster's checklist.")
+    p_cs.set_defaults(func=_cmd_checklist_show)
 
     return parser
 

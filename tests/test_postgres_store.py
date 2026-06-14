@@ -1,8 +1,8 @@
 """Integration test for PostgresStore against the live Supabase schema.
 
-SKIPPED unless DATABASE_URL, SUPABASE_URL, and SUPABASE_SERVICE_ROLE_KEY are all
-set, so the offline unit suite stays green without a database. When they are set,
-this test:
+SKIPPED unless DATABASE_URL, SUPABASE_URL, and a Supabase server secret
+(SUPABASE_SECRET_KEY or legacy SUPABASE_SERVICE_ROLE_KEY) are all set, so the offline
+unit suite stays green without a database. When they are set, this test:
 
   * creates a THROWAWAY auth user via the service-role admin API and uses its id
     as owner_id (auth.users.id is an FK target for conversations/messages);
@@ -20,10 +20,14 @@ import uuid as uuidlib
 
 import pytest
 
-REQUIRED_ENV = ("DATABASE_URL", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY")
+from promptdict.config import load_settings
+
+REQUIRED_ENV = ("DATABASE_URL", "SUPABASE_URL")
 # conftest.py loads repo-root .env before this is evaluated, so a skip here means
 # the var is genuinely absent from the environment and .env.
 _missing = [name for name in REQUIRED_ENV if not os.environ.get(name)]
+if not load_settings().supabase_secret:
+    _missing.append("SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY)")
 pytestmark = pytest.mark.skipif(
     bool(_missing),
     reason="PostgresStore integration test needs env vars; missing: "
@@ -32,13 +36,12 @@ pytestmark = pytest.mark.skipif(
 
 
 def _admin_client():
-    """Service-role Supabase client for the auth admin API."""
+    """Supabase admin client for the auth API, using the resolved server secret
+    (new SUPABASE_SECRET_KEY or legacy SUPABASE_SERVICE_ROLE_KEY)."""
     from supabase import create_client
 
-    return create_client(
-        os.environ["SUPABASE_URL"],
-        os.environ["SUPABASE_SERVICE_ROLE_KEY"],
-    )
+    settings = load_settings()
+    return create_client(settings.supabase_url, settings.supabase_secret)
 
 
 def _synthetic_conversation(owner_id: str):

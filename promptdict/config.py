@@ -26,9 +26,17 @@ def _load_dotenv() -> None:
 class Settings:
     supabase_url: str | None
     supabase_anon_key: str | None
-    supabase_service_role_key: str | None
+    supabase_secret_key: str | None          # new server/worker key (sb_secret_...)
+    supabase_service_role_key: str | None     # legacy server key (kept as fallback)
     mistral_api_key: str | None
     database_url: str | None
+
+    @property
+    def supabase_secret(self) -> str | None:
+        """The server/worker secret, resolved once so call sites don't care which is
+        set: the new ``SUPABASE_SECRET_KEY`` if present, else the legacy
+        ``SUPABASE_SERVICE_ROLE_KEY``. Both are server-only and bypass RLS."""
+        return self.supabase_secret_key or self.supabase_service_role_key
 
     def require(self, field_name: str) -> str:
         """Return a setting that must be present, else raise a clear error."""
@@ -48,6 +56,7 @@ def load_settings() -> Settings:
     return Settings(
         supabase_url=os.environ.get("SUPABASE_URL"),
         supabase_anon_key=os.environ.get("SUPABASE_ANON_KEY"),
+        supabase_secret_key=os.environ.get("SUPABASE_SECRET_KEY"),
         supabase_service_role_key=os.environ.get("SUPABASE_SERVICE_ROLE_KEY"),
         mistral_api_key=os.environ.get("MISTRAL_API_KEY"),
         database_url=os.environ.get("DATABASE_URL"),

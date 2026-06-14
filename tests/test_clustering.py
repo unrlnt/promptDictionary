@@ -2,7 +2,8 @@
 
 SKIPPED unless the env vars it needs are all set (conftest loads repo-root .env).
 It needs MISTRAL_API_KEY (real embeddings) and DATABASE_URL plus the Supabase
-service-role admin creds (to create/delete a throwaway auth user).
+a Supabase server secret — SUPABASE_SECRET_KEY or the legacy
+SUPABASE_SERVICE_ROLE_KEY — (to create/delete a throwaway auth user).
 
 It upserts synthetic conversations in 3 deliberately distinct "task shapes" (two
 near-identical conversations per shape), embeds them through the gateway, clusters
@@ -17,13 +18,12 @@ import uuid as uuidlib
 
 import pytest
 
-REQUIRED_ENV = (
-    "MISTRAL_API_KEY",
-    "DATABASE_URL",
-    "SUPABASE_URL",
-    "SUPABASE_SERVICE_ROLE_KEY",
-)
+from promptdict.config import load_settings
+
+REQUIRED_ENV = ("MISTRAL_API_KEY", "DATABASE_URL", "SUPABASE_URL")
 _missing = [name for name in REQUIRED_ENV if not os.environ.get(name)]
+if not load_settings().supabase_secret:
+    _missing.append("SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY)")
 pytestmark = pytest.mark.skipif(
     bool(_missing),
     reason="clustering integration test needs env vars; missing: " + ", ".join(_missing),
@@ -41,10 +41,8 @@ SHAPES = {
 def _admin_client():
     from supabase import create_client
 
-    return create_client(
-        os.environ["SUPABASE_URL"],
-        os.environ["SUPABASE_SERVICE_ROLE_KEY"],
-    )
+    settings = load_settings()
+    return create_client(settings.supabase_url, settings.supabase_secret)
 
 
 def _build_gateway():
