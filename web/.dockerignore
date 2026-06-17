@@ -1,0 +1,9 @@
+# Build-context hygiene for the web image (context = ./web).
+node_modules
+.next
+out
+.env*
+.DS_Store
+npm-debug.log*
+Dockerfile
+.dockerignore

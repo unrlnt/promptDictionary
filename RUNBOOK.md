@@ -45,6 +45,59 @@ python -m promptdict.cli ingest path/to/export.json
 python -m promptdict.cli list
 ```
 
+## 5. Docker (containerized Python services)
+
+The engine + API ship as a shared Python base image (`docker/Dockerfile.python`,
+Python 3.13-slim). The 8d worker will reuse this same image. **The spaCy NER models
+(`en_core_web_lg`, `nl_core_news_lg`) are baked in at build time**, so the
+in-container sanitizer runs full Presidio NER — not the pattern-only fallback — with
+no runtime download. No secrets are baked in; all config comes from the root `.env`
+at runtime (`DATABASE_URL`, `MISTRAL_API_KEY`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`
+with `SUPABASE_SERVICE_ROLE_KEY` as fallback, and optional `WEB_ORIGIN`).
+
+```bash
+# Build images
+docker compose build
+
+# Local dev: api only. The override publishes it to 127.0.0.1:8000.
+docker compose up api
+curl http://127.0.0.1:8000/health        # -> {"status":"ok"}
+
+# Local dev: api + web together (optional web profile)
+docker compose --profile web up
+```
+
+Building the web image needs the browser-safe `NEXT_PUBLIC_*` values available to
+compose (export them or add to the root `.env`) — they are inlined at build time.
+The web app is also deployable to **Vercel**; compose's web service is optional.
+
+### Port posture (production-safe by default)
+
+The base `docker-compose.yml` is the **production** posture:
+
+- **api** has no `ports:` entry — no host-facing port. It is reachable only on the
+  internal docker network as `api:8000` (by the web service and a host nginx
+  reverse-proxy).
+- **web** publishes to **loopback only** (`127.0.0.1:3000:3000`). Never
+  `3000:3000` / `0.0.0.0`: Docker inserts its own iptables rules that bypass the
+  host firewall (ufw), which would expose the port publicly. A host nginx proxies
+  to the loopback port.
+
+`docker-compose.override.yml` is **local dev only** and is auto-applied by
+`docker compose up`; it publishes the api to `127.0.0.1:8000` for direct testing.
+
+```bash
+# PRODUCTION — no override, api stays unpublished (nginx proxies internally):
+docker compose -f docker-compose.yml up -d
+```
+
+Intended production topology: **Cloudflare → VPS nginx → web (127.0.0.1:3000) +
+api (proxied over the internal docker network)**. The nginx/Cloudflare/TLS config
+itself is out of scope here.
+
+Tests still run on the host against the (host) Python env — Docker doesn't change
+that: `pytest`.
+
 ## GDPR notes
 - EU region (above).
 - `on delete cascade` throughout means deleting a user removes all their data —

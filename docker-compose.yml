@@ -1,0 +1,91 @@
+# PRODUCTION posture (production-safe by default).
+#
+# Run in production WITHOUT the override file so the api stays unpublished:
+#     docker compose -f docker-compose.yml up -d
+#
+# In local dev, `docker compose up` auto-applies docker-compose.override.yml, which
+# publishes the api to 127.0.0.1:8000 for direct testing.
+#
+# Topology (production): Cloudflare -> VPS nginx -> web (127.0.0.1:3000) and the
+# api (reached over this internal docker network by service name `api:8000`).
+# The nginx / Cloudflare / TLS config is out of scope here.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.python
+    image: promptdict-api:latest
+    command: uvicorn promptdict.api.app:app --host 0.0.0.0 --port 8000
+    # All config at runtime; no secrets in the image. Reads the existing root .env:
+    # DATABASE_URL, MISTRAL_API_KEY, SUPABASE_URL, SUPABASE_SECRET_KEY
+    # (SUPABASE_SERVICE_ROLE_KEY fallback), and optionally WEB_ORIGIN.
+    env_file: .env
+    environment:
+      # CORS allow-origin for the browser app; default matches local web.
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
+    # NO `ports:` in the production posture. The api has no host-facing port; it is
+    # reachable only on the internal network as `api:8000` (by the web service and
+    # by a host nginx reverse-proxy). The dev override publishes it to loopback.
+    networks:
+      - internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  web:
+    # Optional: only starts with `--profile web`. Also deployable to Vercel.
+    profiles: ["web"]
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      # NEXT_PUBLIC_* are inlined at build time -> passed as build args. Provide them
+      # to compose (export them or add to root .env); they are browser-safe.
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:-}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    image: promptdict-web:latest
+    depends_on:
+      - api
+    environment:
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:-}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    ports:
+      # LOOPBACK ONLY. A host nginx (outside compose) proxies to this.
+      # NEVER use "3000:3000" or "0.0.0.0:3000:3000": Docker inserts its own
+      # iptables rules that BYPASS the host firewall (e.g. ufw), publishing the
+      # port to the public internet. Binding to 127.0.0.1 keeps it host-local.
+      - "127.0.0.1:3000:3000"
+    networks:
+      - internal
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # 8d will add the async worker + queue here, on the SAME `internal` network:
+  #
+  #   redis:
+  #     image: redis:7-alpine
+  #     networks: [internal]          # no host port — internal only
+  #     restart: unless-stopped
+  #
+  #   worker:
+  #     build: { context: ., dockerfile: docker/Dockerfile.python }
+  #     image: promptdict-api:latest   # reuses this base image
+  #     command: <worker entrypoint>   # consumes jobs, runs the UNCAPPED pipeline
+  #     env_file: .env
+  #     depends_on: [redis]
+  #     networks: [internal]
+  #     restart: unless-stopped
+  #
+  # The api will enqueue jobs to redis; the worker processes them off the request
+  # path (removing the SLICE cap from /process).
+  # ---------------------------------------------------------------------------
+
+networks:
+  internal:
+    driver: bridge

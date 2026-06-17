@@ -1,0 +1,14 @@
+# LOCAL DEV ONLY. Auto-applied by `docker compose up` (compose merges this on top
+# of docker-compose.yml automatically). Publishes the api to the host loopback so
+# you can hit http://127.0.0.1:8000 directly (e.g. GET /health, or the web app via
+# npm run dev).
+#
+# PRODUCTION must NOT use this file. Run instead:
+#     docker compose -f docker-compose.yml up -d
+# which ignores this override, leaving the api with no host-facing port.
+
+services:
+  api:
+    ports:
+      # Loopback only — direct local testing, never exposed beyond this host.
+      - "127.0.0.1:8000:8000"

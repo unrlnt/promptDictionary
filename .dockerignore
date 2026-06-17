@@ -1,0 +1,34 @@
+# Build-context hygiene for the Python image (context = repo root).
+# Keep secrets and bulky/irrelevant paths out of the image build context.
+
+.git
+.gitignore
+
+# Virtualenvs / node deps / build outputs
+.venv
+venv
+**/node_modules
+web/.next
+web/out
+build/
+dist/
+**/*.egg-info
+
+# Python caches / local databases
+**/__pycache__
+*.py[cod]
+.pytest_cache
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets / local env — config is supplied at runtime, never baked in
+.env
+.env.*
+web/.env*
+
+# Editor / OS cruft
+.DS_Store
+
+# Docs/compose not needed inside the image
+docker-compose*.yml

@@ -1,0 +1,45 @@
+# Shared Python base image: the engine + FastAPI API.
+#
+# The 8d background worker will reuse this SAME image (with a different command),
+# so the heavy dependencies live here once: Presidio + spaCy NER models,
+# hdbscan / scikit-learn, mistralai, psycopg. Config is supplied at runtime via
+# environment — no secrets are baked into the image.
+FROM python:3.13-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# Only what's needed to build/install the package (keeps the build context small).
+COPY pyproject.toml README.md ./
+COPY promptdict ./promptdict
+
+# Install the package with the cloud + api extras. build-essential is needed only
+# to compile any sdist-only dependency (e.g. hdbscan); it is installed and purged
+# in a single layer so it is not retained in the image. curl stays for the
+# container healthcheck.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends build-essential curl \
+ && pip install ".[cloud,api]" \
+ && apt-get purge -y build-essential \
+ && apt-get autoremove -y \
+ && rm -rf /var/lib/apt/lists/*
+
+# Bake the spaCy NER models so the in-container sanitizer runs full Presidio NER
+# (not the pattern-only fallback) with no runtime download.
+RUN python -m spacy download en_core_web_lg \
+ && python -m spacy download nl_core_news_lg
+
+# Run as a non-root user.
+RUN useradd --create-home --uid 1000 appuser
+USER appuser
+
+EXPOSE 8000
+
+# Default command runs the API. `--host 0.0.0.0` is correct INSIDE the container;
+# host exposure is governed by compose (production publishes no port for the api;
+# the dev override binds it to loopback). The 8d worker overrides this command.
+CMD ["uvicorn", "promptdict.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
