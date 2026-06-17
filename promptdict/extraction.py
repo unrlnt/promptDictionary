@@ -150,12 +150,16 @@ def _capped_turns(user_turns: list[str], char_limit: int) -> list[str]:
 
 
 def extract_refinements(store: PostgresStore, gateway: SanitizingGateway,
-                        owner_id: str, char_limit: int = DEFAULT_CHAR_LIMIT) -> int:
+                        owner_id: str, char_limit: int = DEFAULT_CHAR_LIMIT,
+                        limit: int | None = None) -> int:
     """Extract refinements for the owner's not-yet-extracted conversations. Returns
     the count processed. Parse/LLM failures are logged and skipped (the conversation
-    stays unextracted for a future retry); the batch never crashes."""
+    stays unextracted for a future retry); the batch never crashes. ``limit`` caps
+    how many conversations are processed (None = all, unchanged)."""
     processed = 0
     for conv, cluster_id in store.iter_unextracted(owner_id):
+        if limit is not None and processed >= limit:
+            break
         user_turns = [m.text for m in conv.messages if m.role == "user" and m.text]
         prompt = build_extraction_prompt(_capped_turns(user_turns, char_limit))
         try:
@@ -190,12 +194,16 @@ def _clean_label(text: str) -> str:
 
 
 def label_clusters(store: PostgresStore, gateway: SanitizingGateway,
-                   owner_id: str, sample_chars: int = 300) -> int:
+                   owner_id: str, sample_chars: int = 300,
+                   limit: int | None = None) -> int:
     """Give each of the owner's unlabelled clusters a short task-type label via the
     gateway. Returns the count labelled. Idempotent: already-labelled clusters are
-    skipped (they aren't returned by ``iter_clusters_unlabelled``)."""
+    skipped (they aren't returned by ``iter_clusters_unlabelled``). ``limit`` caps
+    how many clusters are labelled (None = all, unchanged)."""
     labelled = 0
     for cluster_id, samples in store.iter_clusters_unlabelled(owner_id):
+        if limit is not None and labelled >= limit:
+            break
         if not samples:
             continue
         numbered = "\n".join(f"{i}. {s[:sample_chars]}"

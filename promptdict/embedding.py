@@ -25,12 +25,15 @@ def representative_text(conversation: Conversation, char_limit: int = DEFAULT_CH
 
 
 def embed_conversations(store: PostgresStore, gateway: SanitizingGateway,
-                        owner_id: str, char_limit: int = DEFAULT_CHAR_LIMIT) -> int:
+                        owner_id: str, char_limit: int = DEFAULT_CHAR_LIMIT,
+                        limit: int | None = None) -> int:
     """Embed every not-yet-embedded conversation for ``owner_id``. Returns the count
     embedded. Sanitization happens inside ``gateway.embed`` — no provider is called
-    directly here."""
+    directly here. ``limit`` caps how many are embedded (None = all, unchanged)."""
     embedded = 0
     for conv in store.iter_unembedded(owner_id):
+        if limit is not None and embedded >= limit:
+            break
         text = representative_text(conv, char_limit)
         if not text:
             continue  # nothing user-authored to embed; leave it for now

@@ -16,6 +16,7 @@ dependencies = []
 [project.optional-dependencies]
 dev = ["pytest", "phonenumbers"]
 cloud = ["presidio-analyzer", "phonenumbers", "mistralai", "psycopg[binary]", "python-dotenv", "supabase", "pgvector", "hdbscan"]
+api = ["fastapi", "uvicorn[standard]", "python-multipart"]
 
 [project.scripts]
 promptdict = "promptdict.cli:main"

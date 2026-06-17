@@ -125,3 +125,39 @@ code {
   font-family: ui-monospace, SFMono-Regular, monospace;
   font-size: 0.9em;
 }
+
+.panel {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.panel .form {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.results {
+  margin-top: 1.5rem;
+}
+
+.results ul {
+  padding-left: 1.1rem;
+}
+
+.results li {
+  margin-bottom: 0.35rem;
+}
+
+.tag {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: var(--notice-bg);
+  color: var(--notice-fg);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}

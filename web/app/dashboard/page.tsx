@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { logout } from "./actions";
+import { ProcessPanel } from "./process-panel";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -34,6 +35,8 @@ export default async function DashboardPage() {
       <form action={logout}>
         <button type="submit">Log out</button>
       </form>
+
+      <ProcessPanel />
     </main>
   );
 }
