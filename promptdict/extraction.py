@@ -13,11 +13,15 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Callable
 
 from .cloud import SanitizingGateway
 from .store import PostgresStore
 
 log = logging.getLogger(__name__)
+
+# Optional per-stage progress hook: progress(processed, total).
+Progress = Callable[[int, int], None]
 
 # The 13 canonical refinement dimensions. Anything the LLM returns outside this set
 # is dropped.
@@ -151,13 +155,19 @@ def _capped_turns(user_turns: list[str], char_limit: int) -> list[str]:
 
 def extract_refinements(store: PostgresStore, gateway: SanitizingGateway,
                         owner_id: str, char_limit: int = DEFAULT_CHAR_LIMIT,
-                        limit: int | None = None) -> int:
+                        limit: int | None = None,
+                        progress: Progress | None = None) -> int:
     """Extract refinements for the owner's not-yet-extracted conversations. Returns
     the count processed. Parse/LLM failures are logged and skipped (the conversation
     stays unextracted for a future retry); the batch never crashes. ``limit`` caps
-    how many conversations are processed (None = all, unchanged)."""
+    how many conversations are processed (None = all, unchanged). ``progress(done,
+    total)`` is called as work proceeds, if given."""
+    items = store.iter_unextracted(owner_id)
+    total = len(items) if limit is None else min(limit, len(items))
+    if progress:
+        progress(0, total)
     processed = 0
-    for conv, cluster_id in store.iter_unextracted(owner_id):
+    for conv, cluster_id in items:
         if limit is not None and processed >= limit:
             break
         user_turns = [m.text for m in conv.messages if m.role == "user" and m.text]
@@ -171,6 +181,8 @@ def extract_refinements(store: PostgresStore, gateway: SanitizingGateway,
             continue
         store.replace_refinements(owner_id, conv.conversation_id, rows)
         processed += 1
+        if progress:
+            progress(processed, total)
     return processed
 
 
@@ -195,16 +207,26 @@ def _clean_label(text: str) -> str:
 
 def label_clusters(store: PostgresStore, gateway: SanitizingGateway,
                    owner_id: str, sample_chars: int = 300,
-                   limit: int | None = None) -> int:
+                   limit: int | None = None,
+                   progress: Progress | None = None) -> int:
     """Give each of the owner's unlabelled clusters a short task-type label via the
     gateway. Returns the count labelled. Idempotent: already-labelled clusters are
     skipped (they aren't returned by ``iter_clusters_unlabelled``). ``limit`` caps
-    how many clusters are labelled (None = all, unchanged)."""
+    how many clusters are labelled (None = all, unchanged). ``progress(done, total)``
+    is called as work proceeds, if given."""
+    clusters = store.iter_clusters_unlabelled(owner_id)
+    total = len(clusters) if limit is None else min(limit, len(clusters))
+    if progress:
+        progress(0, total)
     labelled = 0
-    for cluster_id, samples in store.iter_clusters_unlabelled(owner_id):
+    done = 0
+    for cluster_id, samples in clusters:
         if limit is not None and labelled >= limit:
             break
+        done += 1
         if not samples:
+            if progress:
+                progress(min(done, total), total)
             continue
         numbered = "\n".join(f"{i}. {s[:sample_chars]}"
                              for i, s in enumerate(samples, start=1))
@@ -217,4 +239,6 @@ def label_clusters(store: PostgresStore, gateway: SanitizingGateway,
         if label:
             store.set_cluster_label(owner_id, cluster_id, label)
             labelled += 1
+        if progress:
+            progress(min(done, total), total)
     return labelled

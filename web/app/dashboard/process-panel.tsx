@@ -5,6 +5,7 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL!;
+const POLL_MS = 2000;
 
 type ChecklistItem = {
   kind: string;
@@ -23,14 +24,18 @@ type ClusterChecklist = {
 
 type Checklists = { global: ChecklistItem[]; clusters: ClusterChecklist[] };
 
-type Summary = {
-  ingested: number;
-  embedded: number;
-  clusters: number;
-  forgotten_rows: number;
+type Job = {
+  job_id: string;
+  status: "pending" | "running" | "done" | "error";
+  stage: string | null;
+  total: number;
+  processed: number;
+  error: string | null;
 };
 
-type Status = "idle" | "processing" | "done" | "error";
+type UiStatus = "idle" | "working" | "done" | "error";
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function accessToken(): Promise<string | null> {
   const supabase = createClient();
@@ -55,39 +60,54 @@ function ChecklistRow({ item }: { item: ChecklistItem }) {
 
 export function ProcessPanel() {
   const [file, setFile] = useState<File | null>(null);
-  const [status, setStatus] = useState<Status>("idle");
+  const [status, setStatus] = useState<UiStatus>("idle");
   const [error, setError] = useState<string | null>(null);
-  const [summary, setSummary] = useState<Summary | null>(null);
+  const [job, setJob] = useState<Job | null>(null);
   const [checklists, setChecklists] = useState<Checklists | null>(null);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!file) return;
-    setStatus("processing");
+    setStatus("working");
     setError(null);
-    setSummary(null);
+    setJob(null);
     setChecklists(null);
 
     try {
       const token = await accessToken();
       if (!token) throw new Error("Your session expired — please sign in again.");
+      const auth = { Authorization: `Bearer ${token}` };
 
+      // 1) Enqueue.
       const form = new FormData();
       form.append("file", file);
-
-      const processRes = await fetch(`${API_URL}/process`, {
+      const enqueue = await fetch(`${API_URL}/process`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: auth,
         body: form,
       });
-      if (!processRes.ok) {
-        throw new Error(`Processing failed (HTTP ${processRes.status}).`);
+      if (enqueue.status !== 202) {
+        throw new Error(`Upload failed (HTTP ${enqueue.status}).`);
       }
-      setSummary((await processRes.json()) as Summary);
+      const { job_id } = (await enqueue.json()) as { job_id: string };
 
-      const listRes = await fetch(`${API_URL}/checklists`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      // 2) Poll until done/error.
+      for (;;) {
+        await sleep(POLL_MS);
+        const res = await fetch(`${API_URL}/jobs/${job_id}`, { headers: auth });
+        if (!res.ok) throw new Error(`Lost track of the job (HTTP ${res.status}).`);
+        const j = (await res.json()) as Job;
+        setJob(j);
+        if (j.status === "done") break;
+        if (j.status === "error") {
+          setError(j.error ?? "Processing failed.");
+          setStatus("error");
+          return;
+        }
+      }
+
+      // 3) Render results.
+      const listRes = await fetch(`${API_URL}/checklists`, { headers: auth });
       if (!listRes.ok) {
         throw new Error(`Could not load checklists (HTTP ${listRes.status}).`);
       }
@@ -99,11 +119,19 @@ export function ProcessPanel() {
     }
   }
 
+  const progressLabel = () => {
+    if (!job) return "Uploading…";
+    const stage = job.stage ?? job.status;
+    if (job.total > 0) return `Processing — ${stage} ${job.processed}/${job.total}…`;
+    return `Processing — ${stage}…`;
+  };
+
   return (
     <section className="panel">
       <h2>Analyze a chat export</h2>
       <p className="muted">
-        Upload a ChatGPT or Claude export (.json). A capped slice is processed for now.
+        Upload a ChatGPT or Claude export (.json). Your full history is processed in the
+        background.
       </p>
 
       <form onSubmit={onSubmit} className="form">
@@ -113,21 +141,20 @@ export function ProcessPanel() {
           onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           required
         />
-        <button type="submit" disabled={!file || status === "processing"}>
-          {status === "processing" ? "Processing…" : "Process"}
+        <button type="submit" disabled={!file || status === "working"}>
+          {status === "working" ? "Processing…" : "Process"}
         </button>
       </form>
+
+      {status === "working" ? (
+        <p className="notice" role="status">
+          {progressLabel()}
+        </p>
+      ) : null}
 
       {error ? (
         <p className="alert" role="alert">
           {error}
-        </p>
-      ) : null}
-
-      {summary ? (
-        <p className="notice" role="status">
-          Ingested {summary.ingested} · embedded {summary.embedded} · {summary.clusters}{" "}
-          cluster(s) · {summary.forgotten_rows} forgotten requirement(s).
         </p>
       ) : null}
 

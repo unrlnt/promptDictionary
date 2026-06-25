@@ -55,21 +55,33 @@ no runtime download. No secrets are baked in; all config comes from the root `.e
 at runtime (`DATABASE_URL`, `MISTRAL_API_KEY`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`
 with `SUPABASE_SERVICE_ROLE_KEY` as fallback, and optional `WEB_ORIGIN`).
 
+Uploads are processed in the **background**: the `api` enqueues a job (Postgres
+`jobs` table — apply migration `…_jobs.sql`), and the `worker` service claims it with
+`FOR UPDATE SKIP LOCKED` and runs the full, uncapped pipeline through the gateway.
+**No Redis/broker.** The api and worker share the upload spool via a named volume.
+
 ```bash
-# Build images
+# Build images (api + worker share the same python image)
 docker compose build
 
-# Local dev: api only. The override publishes it to 127.0.0.1:8000.
-docker compose up api
+# Local dev: api + worker (default services). The override publishes api to
+# 127.0.0.1:8000; the worker has no host port.
+docker compose up
 curl http://127.0.0.1:8000/health        # -> {"status":"ok"}
 
-# Local dev: api + web together (optional web profile)
+# Local dev: also run the web app in a container (optional web profile)
 docker compose --profile web up
 ```
 
 Building the web image needs the browser-safe `NEXT_PUBLIC_*` values available to
 compose (export them or add to the root `.env`) — they are inlined at build time.
 The web app is also deployable to **Vercel**; compose's web service is optional.
+
+The dashboard upload flow: POST `/process` returns a `job_id` (202); the browser
+polls `GET /jobs/{job_id}` (owner-scoped) showing stage + processed/total, then
+fetches `/checklists` when the job is `done`. Temp uploads are deleted after the
+worker finishes (success or error). Job errors stored in the DB are safe messages
+only (no raw data/PII); full detail goes to the worker logs.
 
 ### Port posture (production-safe by default)
 

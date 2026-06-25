@@ -600,3 +600,92 @@ class PostgresStore(Store):
             created_at=_iso(crow["created_at"]), updated_at=_iso(crow["updated_at"]),
             owner_id=str(crow["owner_id"]),
         )
+
+    # --- background jobs -----------------------------------------------------
+
+    def create_job(self, owner_id: str, job_id: str) -> None:
+        """Enqueue a pending job for ``owner_id`` with a caller-supplied id (which
+        also names the upload file on the shared volume)."""
+        with self._conn.transaction():
+            self._conn.execute(
+                "INSERT INTO jobs (id, owner_id, status) VALUES (%s, %s, 'pending')",
+                (uuid.UUID(job_id), uuid.UUID(owner_id)),
+            )
+
+    def get_job(self, owner_id: str, job_id: str) -> dict | None:
+        """Return a job's progress, but ONLY if it belongs to ``owner_id`` (else
+        None — the API turns that into a 404, never leaking other owners' jobs)."""
+        from psycopg.rows import dict_row
+
+        cur = self._conn.cursor(row_factory=dict_row)
+        row = cur.execute(
+            "SELECT id, status, stage, total, processed, error, "
+            "created_at, started_at, finished_at FROM jobs "
+            "WHERE id = %s AND owner_id = %s",
+            (uuid.UUID(job_id), uuid.UUID(owner_id)),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "job_id": str(row["id"]),
+            "status": row["status"],
+            "stage": row["stage"],
+            "total": row["total"],
+            "processed": row["processed"],
+            "error": row["error"],
+            "created_at": _iso(row["created_at"]),
+            "started_at": _iso(row["started_at"]),
+            "finished_at": _iso(row["finished_at"]),
+        }
+
+    def claim_next_job(self) -> dict | None:
+        """Atomically claim the oldest pending job and mark it running. Uses
+        ``FOR UPDATE SKIP LOCKED`` so multiple workers never claim the same job.
+        Returns ``{"id", "owner_id"}`` or None when the queue is empty. Worker-only
+        (scoping to the owner happens when the worker processes the job)."""
+        from psycopg.rows import dict_row
+
+        with self._conn.transaction():
+            cur = self._conn.cursor(row_factory=dict_row)
+            row = cur.execute(
+                "SELECT id, owner_id FROM jobs WHERE status = 'pending' "
+                "ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1"
+            ).fetchone()
+            if row is None:
+                return None
+            self._conn.execute(
+                "UPDATE jobs SET status = 'running', started_at = now() WHERE id = %s",
+                (row["id"],),
+            )
+            return {"id": str(row["id"]), "owner_id": str(row["owner_id"])}
+
+    def update_job(self, job_id: str, *, stage: str | None = None,
+                   processed: int | None = None, total: int | None = None) -> None:
+        """Update a running job's stage/progress counters."""
+        sets, params = [], []
+        if stage is not None:
+            sets.append("stage = %s")
+            params.append(stage)
+        if processed is not None:
+            sets.append("processed = %s")
+            params.append(processed)
+        if total is not None:
+            sets.append("total = %s")
+            params.append(total)
+        if not sets:
+            return
+        params.append(uuid.UUID(job_id))
+        with self._conn.transaction():
+            self._conn.execute(
+                f"UPDATE jobs SET {', '.join(sets)} WHERE id = %s", params
+            )
+
+    def finish_job(self, job_id: str, status: str, error: str | None = None) -> None:
+        """Mark a job done/error with a finish timestamp. ``error`` must be a SAFE
+        message (no raw data/PII)."""
+        with self._conn.transaction():
+            self._conn.execute(
+                "UPDATE jobs SET status = %s, error = %s, finished_at = now() "
+                "WHERE id = %s",
+                (status, error, uuid.UUID(job_id)),
+            )
