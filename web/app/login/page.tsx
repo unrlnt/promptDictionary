@@ -1,4 +1,5 @@
 import { login, signup } from "./actions";
+import { OAuthButtons } from "./oauth-buttons";
 
 type SearchParams = Promise<{ error?: string; message?: string }>;
 
@@ -24,6 +25,12 @@ export default async function LoginPage({
           {message}
         </p>
       ) : null}
+
+      <OAuthButtons />
+
+      <div className="divider" role="separator">
+        <span>or</span>
+      </div>
 
       <form className="form">
         <label htmlFor="email">Email</label>

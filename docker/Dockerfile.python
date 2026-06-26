@@ -35,6 +35,13 @@ RUN python -m spacy download en_core_web_lg \
 
 # Run as a non-root user.
 RUN useradd --create-home --uid 1000 appuser
+
+# Shared upload spool. Owned by appuser so a freshly-created named volume mounted
+# here inherits that ownership (Docker seeds a new volume from the image dir),
+# letting the non-root api/worker write/delete upload files. NOTE: an already-created
+# volume keeps its old ownership — recreate it (`docker compose down -v`) after this.
+RUN mkdir -p /uploads && chown appuser:appuser /uploads
+
 USER appuser
 
 EXPOSE 8000
