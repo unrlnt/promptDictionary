@@ -110,6 +110,59 @@ itself is out of scope here.
 Tests still run on the host against the (host) Python env — Docker doesn't change
 that: `pytest`.
 
+## 6. Signup allow-list (Before User Created hook)
+
+Account creation is gated to a managed list of approved emails. A Supabase
+**Before User Created** auth hook runs the SQL function
+`public.restrict_signup_to_allowlist(jsonb)` on every signup — email/password
+**and** OAuth (Google/Microsoft) — and rejects anyone whose email is not in
+`public.allowed_emails`. Nothing is written to `auth.users` for a rejected signup.
+
+**Why it exists:** it doubles as signup abuse control. If you ever remove the
+allow-list, you MUST add app-level signup **rate limiting** in its place — they
+are a pair. Don't drop one without the other.
+
+### Apply the migration
+Apply `supabase/migrations/20260628152644_signup_allowlist.sql` like the others —
+paste it into the SQL editor or run `supabase db push`. It creates the
+`allowed_emails` table, the `supabase_auth_admin` grants + RLS policy, and the
+hook function. It is additive and safe to re-run (`if not exists`,
+`create or replace`).
+
+### Enable the hook (one-time, dashboard)
+1. **Authentication → Hooks** (Auth Hooks).
+2. Add a hook for the **Before User Created** event.
+3. Choose **Postgres** as the hook type and point it at the function
+   `public.restrict_signup_to_allowlist` (schema `public`).
+4. Enable it and save. New signups now go through the allow-list immediately.
+
+### Add / remove approved emails (SQL)
+Emails are stored lowercased; the hook lowercases the incoming email before
+comparing, so always insert lowercased.
+
+```sql
+-- approve an email
+insert into public.allowed_emails (email, note)
+    values ('person@example.com', 'why they were approved')
+    on conflict (email) do nothing;
+
+-- revoke access to sign up (does not delete an already-created account)
+delete from public.allowed_emails where email = 'person@example.com';
+
+-- see the current list
+select email, note, created_at from public.allowed_emails order by created_at;
+```
+
+Run these as an operator (SQL editor / service role). The browser-facing roles
+(`anon`, `authenticated`) have no access to the table by design.
+
+### Known quirk
+On rejection, Supabase may surface a generic **"Invalid payload"** (or similarly
+vague) message to the client instead of the 403 message above. This is a known
+Supabase behavior — the signup is still correctly **blocked**; only the
+client-side wording is generic. Verify a rejection by confirming no new row
+appears in `auth.users`, not by the client message text.
+
 ## GDPR notes
 - EU region (above).
 - `on delete cascade` throughout means deleting a user removes all their data —
