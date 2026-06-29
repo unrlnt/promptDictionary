@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { createClient } from "@/lib/supabase/client";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL!;
+const API_URL = "/api";
 const POLL_MS = 2000;
 
 type ChecklistItem = {
