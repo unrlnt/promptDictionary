@@ -10,6 +10,9 @@ const API_BASE = "http://api:8000";
 // (duplex: "half") without buffering the whole file into memory.
 export const runtime = "nodejs";
 
+// Large chat exports can take a while to forward + enqueue; allow up to 60s.
+export const maxDuration = 60;
+
 // BFF: the browser POSTs the file here instead of calling FastAPI directly. We
 // read the session cookie server-side, attach the JWT as a Bearer token, and
 // forward the multipart body verbatim to the engine. FastAPI verifies the JWT
