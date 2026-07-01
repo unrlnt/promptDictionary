@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { createClient } from "@/lib/supabase/client";
 
@@ -64,6 +64,37 @@ export function ProcessPanel() {
   const [error, setError] = useState<string | null>(null);
   const [job, setJob] = useState<Job | null>(null);
   const [checklists, setChecklists] = useState<Checklists | null>(null);
+  const [initializing, setInitializing] = useState(true);
+
+  // On mount, load any previously processed results so returning users see their
+  // grid immediately without re-uploading. Uses the same fetch pattern as the
+  // post-processing checklist load. On empty data / non-OK / error, we fall
+  // through to the normal upload form.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await accessToken();
+        if (!token) return;
+        const auth = { Authorization: `Bearer ${token}` };
+        const listRes = await fetch(`${API_URL}/checklists`, { headers: auth });
+        if (!listRes.ok) return;
+        const data = (await listRes.json()) as Checklists;
+        const hasData = data.global.length > 0 || data.clusters.length > 0;
+        if (!cancelled && hasData) {
+          setChecklists(data);
+          setStatus("done");
+        }
+      } catch {
+        // Ignore — show the upload form as if there were no prior results.
+      } finally {
+        if (!cancelled) setInitializing(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -125,6 +156,18 @@ export function ProcessPanel() {
     if (job.total > 0) return `Processing — ${stage} ${job.processed}/${job.total}…`;
     return `Processing — ${stage}…`;
   };
+
+  // Brief loading state so we don't flash the upload form before the initial
+  // results load resolves.
+  if (initializing) {
+    return (
+      <section className="panel">
+        <p className="notice" role="status">
+          Loading your results…
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section className="panel">
