@@ -34,9 +34,15 @@ body {
   line-height: 1.5;
 }
 
+body{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+}
+
 .container {
-  max-width: 28rem;
-  margin: 4rem auto;
+  max-width: 900px;
+  margin: 2rem auto;
   padding: 0 1.5rem;
 }
 

@@ -26,10 +26,10 @@ export default async function DashboardPage() {
       <dl className="kv">
         <dt>Email</dt>
         <dd>{user.email}</dd>
-        <dt>User ID</dt>
+        {/* <dt>User ID</dt>
         <dd>
           <code>{user.id}</code>
-        </dd>
+        </dd> */}
       </dl>
 
       <form action={logout}>
