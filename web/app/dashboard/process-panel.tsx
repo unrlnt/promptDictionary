@@ -24,6 +24,10 @@ type ClusterChecklist = {
 
 type Checklists = { global: ChecklistItem[]; clusters: ClusterChecklist[] };
 
+// A cluster-shaped view of the global checklist, so the grid + detail screens can
+// render the global and per-cluster results with identical logic.
+type GlobalCard = { cluster_id: "global"; label: "General"; items: ChecklistItem[] };
+
 type Job = {
   job_id: string;
   status: "pending" | "running" | "done" | "error";
@@ -65,6 +69,10 @@ export function ProcessPanel() {
   const [job, setJob] = useState<Job | null>(null);
   const [checklists, setChecklists] = useState<Checklists | null>(null);
   const [initializing, setInitializing] = useState(true);
+  // Screen 2 selection: null = show the grid, otherwise show that card's detail.
+  const [selectedCluster, setSelectedCluster] = useState<
+    ClusterChecklist | GlobalCard | null
+  >(null);
 
   // On mount, load any previously processed results so returning users see their
   // grid immediately without re-uploading. Uses the same fetch pattern as the
@@ -103,6 +111,7 @@ export function ProcessPanel() {
     setError(null);
     setJob(null);
     setChecklists(null);
+    setSelectedCluster(null); // drop any open detail view for the previous results
 
     try {
       const token = await accessToken();
@@ -169,6 +178,14 @@ export function ProcessPanel() {
     );
   }
 
+  // Normalize the global checklist into a cluster-shaped card, first in the grid.
+  const cards: (ClusterChecklist | GlobalCard)[] = checklists
+    ? [
+        { cluster_id: "global", label: "General", items: checklists.global },
+        ...checklists.clusters,
+      ]
+    : [];
+
   return (
     <section className="panel">
       <h2>Analyze a chat export</h2>
@@ -202,29 +219,45 @@ export function ProcessPanel() {
       ) : null}
 
       {checklists ? (
-        <div className="results">
-          <h3>What you tend to forget (global)</h3>
-          {checklists.global.length ? (
-            <ul>
-              {checklists.global.map((item) => (
-                <ChecklistRow key={item.kind} item={item} />
-              ))}
-            </ul>
-          ) : (
-            <p className="muted">No forgotten requirements found yet.</p>
-          )}
-
-          {checklists.clusters.map((cluster) => (
-            <div key={cluster.cluster_id}>
-              <h3>{cluster.label ?? "(unlabelled task type)"}</h3>
+        selectedCluster ? (
+          // Screen 2 — cluster detail (replaces the grid).
+          <div className="results">
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => setSelectedCluster(null)}
+            >
+              ← Back
+            </button>
+            <h3>{selectedCluster.label ?? "Unlabelled"}</h3>
+            {selectedCluster.items.length ? (
               <ul>
-                {cluster.items.map((item) => (
+                {selectedCluster.items.map((item) => (
                   <ChecklistRow key={item.kind} item={item} />
                 ))}
               </ul>
-            </div>
-          ))}
-        </div>
+            ) : (
+              <p className="muted">No forgotten requirements found yet.</p>
+            )}
+          </div>
+        ) : (
+          // Screen 1 — grid of clickable cluster cards (General first).
+          <div className="grid">
+            {cards.map((card) => (
+              <button
+                key={card.cluster_id}
+                type="button"
+                className="card"
+                onClick={() => setSelectedCluster(card)}
+              >
+                <span className="card-label">{card.label ?? "Unlabelled"}</span>
+                <span className="muted">
+                  {card.items.length} item{card.items.length === 1 ? "" : "s"}
+                </span>
+              </button>
+            ))}
+          </div>
+        )
       ) : null}
     </section>
   );
