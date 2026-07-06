@@ -73,6 +73,7 @@ export function ProcessPanel() {
   const [selectedCluster, setSelectedCluster] = useState<
     ClusterChecklist | GlobalCard | null
   >(null);
+  const [search, setSearch] = useState("");
 
   // On mount, load any previously processed results so returning users see their
   // grid immediately without re-uploading. Uses the same fetch pattern as the
@@ -225,7 +226,10 @@ export function ProcessPanel() {
             <button
               type="button"
               className="secondary"
-              onClick={() => setSelectedCluster(null)}
+              onClick={() => {
+                setSelectedCluster(null);
+                setSearch("");
+              }}
             >
               ← Back
             </button>
@@ -241,22 +245,50 @@ export function ProcessPanel() {
             )}
           </div>
         ) : (
-          // Screen 1 — grid of clickable cluster cards (General first).
-          <div className="grid">
-            {cards.map((card) => (
-              <button
-                key={card.cluster_id}
-                type="button"
-                className="card"
-                onClick={() => setSelectedCluster(card)}
-              >
-                <span className="card-label">{card.label ?? "Unlabelled"}</span>
-                <span className="muted">
-                  {card.items.length} item{card.items.length === 1 ? "" : "s"}
-                </span>
-              </button>
-            ))}
-          </div>
+          // Screen 1 — keyword search + grid of clickable cluster cards (General first).
+          (() => {
+            const filtered = search.trim()
+              ? cards.filter((card) =>
+                  (card.label ?? "Unlabelled")
+                    .toLowerCase()
+                    .includes(search.trim().toLowerCase()),
+                )
+              : cards;
+
+            return (
+              <>
+                <input
+                  type="text"
+                  placeholder="Search clusters…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+
+                {filtered.length ? (
+                  <div className="grid">
+                    {filtered.map((card) => (
+                      <button
+                        key={card.cluster_id}
+                        type="button"
+                        className="card"
+                        onClick={() => setSelectedCluster(card)}
+                      >
+                        <span className="card-label">
+                          {card.label ?? "Unlabelled"}
+                        </span>
+                        <span className="muted">
+                          {card.items.length} item
+                          {card.items.length === 1 ? "" : "s"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted">No clusters match your search.</p>
+                )}
+              </>
+            );
+          })()
         )
       ) : null}
     </section>
