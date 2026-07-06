@@ -275,7 +275,13 @@ class PostgresStore(Store):
                     project      = EXCLUDED.project,
                     created_at   = EXCLUDED.created_at,
                     updated_at   = EXCLUDED.updated_at,
-                    content_hash = EXCLUDED.content_hash
+                    content_hash = EXCLUDED.content_hash,
+                    -- Content changed (guarded by the WHERE below), so the derived
+                    -- data is now stale: null it out so the incremental embed +
+                    -- extract stages reprocess just this conversation next run.
+                    embedding    = NULL,
+                    cluster_id   = NULL,
+                    refinements_extracted_at = NULL
                 WHERE conversations.owner_id = EXCLUDED.owner_id
                   AND conversations.content_hash IS DISTINCT FROM EXCLUDED.content_hash
                 RETURNING id
