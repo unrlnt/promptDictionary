@@ -68,10 +68,10 @@ Here are the user's messages, in order:
 
 Return ONLY valid JSON, no markdown, no commentary, exactly this shape:
 {
-  "forgotten": [{"kind": "<dimension>", "turn": <1-based index of the user message that introduced it>, "note": "<generalized description, max 12 words>"}],
-  "specified_upfront": [{"kind": "<dimension>", "note": "<generalized description, max 12 words>"}]
+  "forgotten": [{"kind": "<dimension>", "turn": <1-based index of the user message that introduced it>, "note": "<actionable prompt instruction the user should add, based on what they actually forgot, aim for max 12 words, imperative mood>"}],
+  "specified_upfront": [{"kind": "<dimension>", "note": "<actionable prompt instruction the user should add, based on what they actually forgot, aim for max 12 words, imperative mood>"}]
 }
-Generalize each note (e.g. "specify the target audience") and never copy sensitive content.
+Write each note as a specific, actionable prompt instruction in imperative mood, grounded in what the user actually forgot in this conversation (e.g. "Always require citations for every factual claim.", "Specify output as a numbered list."). Never copy sensitive content or personal data.
 If nothing qualifies, return empty arrays."""
 
 
