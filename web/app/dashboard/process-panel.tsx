@@ -262,6 +262,7 @@ export function ProcessPanel() {
                   placeholder="Search clusters…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  id="searchClusters"
                 />
 
                 {filtered.length ? (
