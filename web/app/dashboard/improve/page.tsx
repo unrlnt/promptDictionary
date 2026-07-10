@@ -2,10 +2,10 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { DashboardNav } from "@/components/dashboard-nav";
-import { logout } from "./actions";
-import { ProcessPanel } from "./process-panel";
+import { logout } from "../actions";
+import { ImprovePanel } from "./improve-panel";
 
-export default async function DashboardPage() {
+export default async function ImprovePage() {
   const supabase = await createClient();
 
   // getUser() verifies the token with the Supabase auth server (unlike
@@ -27,10 +27,6 @@ export default async function DashboardPage() {
       <dl className="kv">
         <dt>Email</dt>
         <dd>{user.email}</dd>
-        {/* <dt>User ID</dt>
-        <dd>
-          <code>{user.id}</code>
-        </dd> */}
       </dl>
 
       <form action={logout}>
@@ -39,7 +35,7 @@ export default async function DashboardPage() {
 
       <DashboardNav />
 
-      <ProcessPanel />
+      <ImprovePanel />
     </main>
   );
 }

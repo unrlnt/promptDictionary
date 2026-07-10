@@ -136,13 +136,15 @@ class MistralLLMProvider(LLMProvider):
         self._client = client if client is not None else _mistral_client(api_key)
         self._retry = retry or RetryPolicy()
 
-    def complete(self, prompt: str) -> str:
-        """Return the model's text. Receives ALREADY-SANITIZED text by contract."""
+    def complete(self, prompt: str, system: str | None = None) -> str:
+        """Return the model's text. Receives ALREADY-SANITIZED text by contract. An
+        optional static ``system`` prompt steers a conversational response."""
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
         resp = self._retry.call(
-            lambda: self._client.chat.complete(
-                model=self.MODEL,
-                messages=[{"role": "user", "content": prompt}],
-            )
+            lambda: self._client.chat.complete(model=self.MODEL, messages=messages)
         )
         content = resp.choices[0].message.content
         if isinstance(content, list):

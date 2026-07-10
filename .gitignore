@@ -35,3 +35,4 @@ web/.env.local
 
 # OS cruft
 .DS_Store
+promptDictionary.code-workspace

@@ -20,8 +20,9 @@ from .sanitize import Sanitizer
 
 class LLMProvider(ABC):
     @abstractmethod
-    def complete(self, prompt: str) -> str:
-        """Receives ALREADY-SANITIZED text only."""
+    def complete(self, prompt: str, system: str | None = None) -> str:
+        """Receives ALREADY-SANITIZED text only. An optional static ``system``
+        prompt (app instructions, no user data) steers a conversational response."""
 
 
 class EmbeddingProvider(ABC):
@@ -44,6 +45,14 @@ class SanitizingGateway:
     def extract(self, prompt: str) -> str:
         return self._llm.complete(self._sanitizer.sanitize(prompt, self._language))
 
+    def chat(self, system: str, user: str) -> str:
+        """Conversational completion (unlike ``extract``'s single-shot rewrite). The
+        ``user`` message is sanitized before egress; ``system`` is static app text
+        with no user data and passes through unchanged. Still the one egress path."""
+        return self._llm.complete(
+            self._sanitizer.sanitize(user, self._language), system=system
+        )
+
     def embed(self, texts: list[str]) -> list[list[float]]:
         clean = [self._sanitizer.sanitize(t, self._language) for t in texts]
         return self._embeddings.embed(clean)
@@ -56,7 +65,7 @@ class MockProvider(LLMProvider, EmbeddingProvider):
     def __init__(self):
         self.received: list[str] = []
 
-    def complete(self, prompt: str) -> str:
+    def complete(self, prompt: str, system: str | None = None) -> str:
         self.received.append(prompt)
         return "ok"
 

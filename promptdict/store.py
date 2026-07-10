@@ -528,6 +528,38 @@ class PostgresStore(Store):
         ).fetchall()
         return [(str(r["id"]), r["label"]) for r in rows]
 
+    def nearest_cluster(self, owner_id: str, embedding: list[float]) -> dict | None:
+        """The owner's cluster whose centroid is closest to ``embedding`` by cosine
+        similarity. Returns ``{'cluster_id', 'label', 'similarity'}``, or None when
+        the owner has no cluster with a centroid. Uses the same pgvector ``<=>``
+        distance the clustering stage builds centroids for."""
+        if not self._vector_ready:
+            raise RuntimeError(
+                "pgvector not available — install the cloud extra "
+                "(pip install -e \".[cloud]\") to query cluster centroids."
+            )
+        from psycopg.rows import dict_row
+
+        # Format as a pgvector literal and cast explicitly: in the `<=>` operator
+        # position there is no column to infer the vector type from, so a bound
+        # list wouldn't adapt reliably. Matches the '[...]'::vector query shape.
+        vec = "[" + ",".join(str(float(x)) for x in embedding) + "]"
+        cur = self._conn.cursor(row_factory=dict_row)
+        row = cur.execute(
+            "SELECT id, label, 1 - (centroid <=> %s::vector) AS similarity "
+            "FROM clusters "
+            "WHERE owner_id = %s AND centroid IS NOT NULL "
+            "ORDER BY centroid <=> %s::vector LIMIT 1",
+            (vec, uuid.UUID(owner_id), vec),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "cluster_id": str(row["id"]),
+            "label": row["label"],
+            "similarity": float(row["similarity"]),
+        }
+
     def replace_checklists(self, owner_id: str, rows: list[tuple]) -> None:
         """Idempotently rewrite the owner's checklists. ``rows`` are
         ``(scope, cluster_id, kind, conversation_count, total_count, rank,
